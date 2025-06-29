@@ -5,7 +5,7 @@
   "main": "src/bot.ts",
   "scripts": {
     "ollama:serve": "ollama serve",
-    "ollama:pull": "ollama pull llama2:7b-chat",
+    "ollama:pull": "ollama pull llama3:8b",
     "bot:start": "ts-node src/bot.ts",
     "start": "concurrently -k -n OLLAMA,BOT \"npm run ollama:serve\" \"npm run ollama:pull && npm run bot:start\""
   },

@@ -5,7 +5,7 @@ import { randomInt } from 'crypto';
 dotenv.config();
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-const ollamaClient = new OllamaClient(process.env.OLLAMA_API_URL || 'http://localhost:11434/api/generate');
+const ollamaClient = new OllamaClient(process.env.OLLAMA_API_URL || 'http://localhost:11434/api/generate', 'llama3:8b');
 
 const TARGET_GUILD_ID = process.env.TARGET_GUILD_ID;
 const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
