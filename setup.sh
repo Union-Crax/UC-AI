@@ -15,6 +15,10 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Set up project dependencies
 cd discord-ai-bot
 npm install
+npm install --save-dev wait-on
+
+# Fix permissions for concurrently
+chmod +x node_modules/.bin/concurrently
 
 # Update the ollama:pull script to use llama3:8b model
 sed -i 's/"ollama:pull": ".*"/"ollama:pull": "ollama pull llama3:8b"/' package.json
