@@ -19,6 +19,7 @@ npm install --save-dev wait-on
 
 # Fix permissions for concurrently
 chmod +x node_modules/.bin/concurrently
+chmod -R +x node_modules/.bin/*
 
 # Update the ollama:pull script to use llama3:8b model
 sed -i 's/"ollama:pull": ".*"/"ollama:pull": "ollama pull llama3:8b"/' package.json
