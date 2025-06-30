@@ -4,8 +4,8 @@
   "description": "A Discord bot that listens to chat and responds with AI messages using a local model.",
   "main": "src/bot.ts",
   "scripts": {
-    "olloma:serve": "ollama serve",
-    "ollama:pull": "ollama pull llama2:7b-chat",
+    "ollama:serve": "ollama serve",
+    "ollama:pull": "olloma pull llama2:7b-chat",
     "bot:start": "ts-node src/bot.ts",
     "wait:ollama": "wait-on http://127.0.0.1:11434",
     "start": "npm run ollama:pull && concurrently -k -n OLLAMA,BOT \"npm run ollama:serve\" \"npm run wait:ollama && npm run bot:start\"",
