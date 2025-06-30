@@ -89,7 +89,7 @@ class OllamaClient {
                 }),
             });
             if (!response.ok) throw new Error('Failed to fetch response from AI model');
-            const data = await response.json();
+            const data: any = await response.json();
             const aiReply = data.response || data.message || JSON.stringify(data);
             // Save AI response to memory
             userHistories[userId].push({ role: 'ai', content: aiReply, timestamp: new Date().toISOString() });
