@@ -5,9 +5,10 @@
   "main": "src/bot.ts",
   "scripts": {
     "ollama:serve": "ollama serve",
-    "ollama:pull": "ollama pull llama3:8b",
+    "ollama:pull": "ollama pull llama2:7b-chat",
     "bot:start": "ts-node src/bot.ts",
-    "start": "concurrently -k -n OLLAMA,BOT \"npm run ollama:serve\" \"npm run ollama:pull && npm run bot:start\""
+    "start": "concurrently -k -n OLLAMA,BOT \"npm run ollama:serve\" \"npm run ollama:pull && npm run bot:start\"",
+    "sync:model": "node updateOllamaPull.js"
   },
   "dependencies": {
     "axios": "^0.21.1",
