@@ -1,4 +1,3 @@
-
 [discord]
 token = "Enter bot token here" # Do not share this with anyone!
 server_id = "YOUR_SERVER_ID" # Only allow the bot to talk in this server
@@ -8,3 +7,6 @@ channel_id = "YOUR_CHANNEL_ID" # Only allow the bot to talk in this channel
 model = "llama3.2" # Some examples of valid input are "llama3.2" and "llama2-uncensored"
 # remember to download your model before usage with ollama pull
 # example: ollama pull llama3.2
+
+[system]
+prompt = ""

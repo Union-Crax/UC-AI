@@ -16,6 +16,7 @@ TOKEN = config_data['discord']['token']
 SERVER_ID = int(config_data['discord'].get('server_id', 0))
 CHANNEL_ID = int(config_data['discord'].get('channel_id', 0))
 API_URL = 'http://localhost:11434/api/generate'
+SYSTEM_PROMPT = config_data.get('system', {}).get('prompt', "")
 
 # set what the bot is allowed to listen to
 intents = discord.Intents.default()
@@ -24,15 +25,23 @@ client = discord.Client(intents=intents)
 
 # Function to send a request to the Ollama API and get a response
 def generate_response(prompt):
+    # Prepend the system prompt if available
+    full_prompt = prompt
+    if SYSTEM_PROMPT:
+        full_prompt = f"{SYSTEM_PROMPT}\n\n{prompt}"
     data = {
-        "model": "llama2-uncensored",  # Adjust this if you want to use a different model
-        "prompt": prompt,
-    "stream": False
+        "model": config_data['ollama']['model'],  # Use model from config
+        "prompt": full_prompt,
+        "stream": False
     }
     response = requests.post(API_URL, json=data)
     if response.status_code == 200:
         response_data = response.json()
-        return response_data.get("response", "Sorry, I couldn't generate a response.")
+        reply = response_data.get("response", "Sorry, I couldn't generate a response.")
+        # Discord message limit is 2000 characters
+        if len(reply) > 2000:
+            reply = reply[:2000]
+        return reply
     else:
         return "There was an error with the API."
 

@@ -53,9 +53,9 @@ def generate_response(prompt):
     save_conversation_history()
 
     data = {
-        "model": config_data['ollama']['model'],  # load model name from config
+        "model": config_data['ollama']['model'],  # Use model from config
         "messages": conversation_history,  # Send the entire conversation history
-        "stream": False  # Set stream to False or the program will start bitching
+        "stream": False
     }
 
     response = requests.post(API_URL, json=data)

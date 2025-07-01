@@ -45,7 +45,7 @@ def generate_response(prompt, images=None):
     save_conversation_history()
 
     data = {
-        "model": config_data['ollama']['model'],
+        "model": config_data['ollama']['model'],  # Use model from config
         "messages": conversation_history,
         "stream": False
     }
