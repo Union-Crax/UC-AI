@@ -16,26 +16,33 @@ def save_memory(memory):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
+import time
 def add_to_memory(user_id, user_message, bot_reply):
     memory = load_memory()
     if str(user_id) not in memory:
         memory[str(user_id)] = []
-    # Detect simple actions for memory
+    # Improved action detection with more context and keywords
     action = None
     msg_lower = user_message.lower()
-    if "marry me" in msg_lower:
+    if any(word in msg_lower for word in ["marry me", "let's get married", "will you marry me"]):
         action = f"You are now married to {user_id}."
-    elif "kiss" in msg_lower:
+    elif any(word in msg_lower for word in ["kiss", "smooch", "make out"]):
         action = f"You kissed {user_id}."
-    elif "hug" in msg_lower:
+    elif any(word in msg_lower for word in ["hug", "embrace"]):
         action = f"You hugged {user_id}."
+    elif any(word in msg_lower for word in ["divorce", "break up"]):
+        action = f"You are now divorced from {user_id}."
     # Add more actions as needed
-    entry = {"user": user_message, "bot": bot_reply}
+    entry = {
+        "user": user_message,
+        "bot": bot_reply,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
     if action:
         entry["action"] = action
     memory[str(user_id)].append(entry)
-    # Keep only the last 10 exchanges per user for context
-    memory[str(user_id)] = memory[str(user_id)][-10:]
+    # Keep only the last 15 exchanges per user for context
+    memory[str(user_id)] = memory[str(user_id)][-15:]
     save_memory(memory)
 
 def get_user_memory(user_id):
@@ -131,7 +138,7 @@ async def on_message(message):
     if message.guild and message.guild.id == GUILD_ID and message.channel.id == CHANNEL_ID:
         mentioned = bot.user in message.mentions
         replied = message.reference is not None and getattr(message.reference.resolved, 'author', None) == bot.user if message.reference and hasattr(message.reference, 'resolved') else False
-        is_chat_command = message.content.strip().startswith('!chat')
+        is_chat_command = message.content.strip().startswith('!uc')
         is_restart_command = message.content.strip().startswith('!restart')
         is_stop_command = message.content.strip().startswith('!stop')
 
@@ -151,9 +158,12 @@ async def on_message(message):
             memory_text = ""
             if memory_history:
                 for turn in memory_history:
-                    memory_text += f"{turn['user']}\n{turn['bot']}\n"
+                    memory_text += f"User: {turn['user']}\n"
+                    memory_text += f"Bot: {turn['bot']}\n"
                     if 'action' in turn:
                         memory_text += f"Action: {turn['action']}\n"
+                    if 'timestamp' in turn:
+                        memory_text += f"Time: {turn['timestamp']}\n"
             prompt = (
                 f"{system_prompt}\n"
                 f"{memory_text}"
