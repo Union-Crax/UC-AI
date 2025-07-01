@@ -98,10 +98,28 @@ def query_ollama(prompt):
     except Exception as e:
         return f"[Ollama error: {e}]"
 
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    print(f'Bot started successfully, running model {OLLAMA_MODEL}')
+    # Send startup message to the configured channel
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        startup_msg = (
+            f"✅ Bot started successfully!\n"
+            f"Model: `{OLLAMA_MODEL}`\n"
+            f"Guild ID: `{GUILD_ID}`\n"
+            f"Channel ID: `{CHANNEL_ID}`\n"
+            f"Bot User ID: `{bot.user.id}`"
+        )
+        try:
+            await channel.send(startup_msg)
+        except Exception as e:
+            print(f"Failed to send startup message: {e}")
+    else:
+        print(f"Could not find channel with ID {CHANNEL_ID} to send startup message.")
 
 
 @bot.event
