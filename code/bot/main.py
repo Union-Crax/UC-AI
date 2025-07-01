@@ -1,3 +1,19 @@
+import io
+from PIL import Image
+import pytesseract
+async def extract_text_from_attachments(message):
+    text = ""
+    for attachment in message.attachments:
+        if any(attachment.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"]):
+            try:
+                img_bytes = await attachment.read()
+                img = Image.open(io.BytesIO(img_bytes))
+                extracted = pytesseract.image_to_string(img)
+                if extracted.strip():
+                    text += f"[Image text: {extracted.strip()}] "
+            except Exception as e:
+                print(f"OCR error: {e}")
+    return text
 import json
 
 # Memory file path
@@ -147,6 +163,10 @@ async def on_message(message):
                 user_content = message.content.strip()[5:].strip() or "Say hello!"
             else:
                 user_content = message.content
+            # Extract text from attachments (images/gifs)
+            attachment_text = await extract_text_from_attachments(message)
+            if attachment_text:
+                user_content += f" {attachment_text}"
             system_prompt = (
                 "You are a lively and charming conversational partner who loves to chat and roleplay. "
                 "Speak naturally and avoid mentioning anything about being an AI, assistant, or similar. "
