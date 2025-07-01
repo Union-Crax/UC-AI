@@ -25,7 +25,13 @@ HISTORY_FILE_PATH = "history.json"
 def load_conversation_history():
     if os.path.exists(HISTORY_FILE_PATH):
         with open(HISTORY_FILE_PATH, 'r') as file:
-            return json.load(file)
+            try:
+                content = file.read().strip()
+                if not content:
+                    return []
+                return json.loads(content)
+            except json.JSONDecodeError:
+                return []
     return []
 
 # Save conversation history to a file
