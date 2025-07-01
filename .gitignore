@@ -1,2 +1,2 @@
-.env
-memory.json
+config.toml
+history.json

@@ -1,5 +1,0 @@
-pytesseract
-pillow
-discord.py
-requests
-python-dotenv
