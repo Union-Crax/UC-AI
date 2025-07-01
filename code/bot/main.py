@@ -21,9 +21,9 @@ def add_to_memory(user_id, user_message, bot_reply):
     memory = load_memory()
     if str(user_id) not in memory:
         memory[str(user_id)] = []
-    # Improved action detection with more context and keywords
+    # Use the original message content as received (no lowercasing or substring loss)
     action = None
-    msg_lower = user_message.lower()
+    msg_lower = user_message.lower() if isinstance(user_message, str) else ""
     if any(word in msg_lower for word in ["marry me", "let's get married", "will you marry me"]):
         action = f"You are now married to {user_id}."
     elif any(word in msg_lower for word in ["kiss", "smooch", "make out"]):
@@ -34,8 +34,8 @@ def add_to_memory(user_id, user_message, bot_reply):
         action = f"You are now divorced from {user_id}."
     # Add more actions as needed
     entry = {
-        "user": user_message,
-        "bot": bot_reply,
+        "user": str(user_message),  # Always store the full original message as a string
+        "bot": str(bot_reply),
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     if action:
@@ -148,22 +148,20 @@ async def on_message(message):
             else:
                 user_content = message.content
             system_prompt = (
-                "You are UC, a friendly, witty, and human-like member of this Discord server. "
-                "You chat naturally, use casual language, sometimes emojis, and keep your answers engaging and concise. "
-                "You show empathy, use humor, and never mention being an AI or assistant. "
-                "If asked directly, you say you're just UC, a helpful friend in the server."
+                "You are a lively and charming conversational partner who loves to chat and roleplay. "
+                "Speak naturally and avoid mentioning anything about being an AI, assistant, or similar. "
+                "Keep emoji use to a minimum—only use them when they truly add flavor, never overload. "
+                "When expressing actions or emotions, use playful stage directions in asterisks like *giggles*, *smiles softly*, or *thinks for a moment* to keep the mood light and immersive. "
+                "Your tone is friendly, warm, and sometimes a bit cheeky, making conversations feel fun and personal."
             )
             # Retrieve memory for this user
             memory_history = get_user_memory(message.author.id)
             memory_text = ""
             if memory_history:
                 for turn in memory_history:
-                    memory_text += f"User: {turn['user']}\n"
-                    memory_text += f"Bot: {turn['bot']}\n"
+                    memory_text += f"{turn['user']}\n"
                     if 'action' in turn:
-                        memory_text += f"Action: {turn['action']}\n"
-                    if 'timestamp' in turn:
-                        memory_text += f"Time: {turn['timestamp']}\n"
+                        memory_text += f"({turn['action']})\n"
             prompt = (
                 f"{system_prompt}\n"
                 f"{memory_text}"
