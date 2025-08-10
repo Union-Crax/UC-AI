@@ -1,2 +1,4 @@
 config.toml
 history.json
+bot.log
+history_backup.json
