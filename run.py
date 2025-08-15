@@ -65,15 +65,17 @@ GIF_URL = 'https://tenor.com/h4GJRQYBqhK.gif'
 GIF_PROB = 0.01
 
 # Define the path for the conversation history files
-def get_history_path(channel_id):
+def get_history_path(channel_id, user_id=None):
     # Create a histories directory if it doesn't exist
     if not os.path.exists("histories"):
         os.makedirs("histories")
+    if user_id:
+        return f"histories/history_{channel_id}_{user_id}.json"
     return f"histories/history_{channel_id}.json"
 
 # Load conversation history from a file if it exists
-def load_conversation_history(channel_id):
-    history_path = get_history_path(channel_id)
+def load_conversation_history(channel_id, user_id=None):
+    history_path = get_history_path(channel_id, user_id)
     if os.path.exists(history_path):
         with open(history_path, 'r') as file:
             try:
@@ -86,13 +88,60 @@ def load_conversation_history(channel_id):
     return []
 
 # Save conversation history to a file
-def save_conversation_history(channel_id, history):
-    history_path = get_history_path(channel_id)
+def save_conversation_history(channel_id, history, user_id=None):
+    history_path = get_history_path(channel_id, user_id)
     with open(history_path, 'w') as file:
         json.dump(history, file)
 
-# Store conversation histories in a dictionary
+# Store conversation histories in a nested dictionary
 conversation_histories = {}
+
+def get_or_create_history(channel_id, user_id):
+    # Create nested dictionaries if they don't exist
+    if channel_id not in conversation_histories:
+        conversation_histories[channel_id] = {
+            'channel': load_conversation_history(channel_id),
+            'users': {}
+        }
+    
+    if user_id not in conversation_histories[channel_id]['users']:
+        conversation_histories[channel_id]['users'][user_id] = load_conversation_history(channel_id, user_id)
+    
+    return conversation_histories[channel_id]
+
+def get_combined_history(channel_id, user_id):
+    """Get a combined history that includes:
+    1. The system prompt
+    2. A summary of recent channel context (last 2-3 messages)
+    3. The user's specific conversation history (last 5-10 messages)
+    """
+    history = get_or_create_history(channel_id, user_id)
+    combined = []
+    
+    # Add system prompt
+    system_prompt = config_data.get('system', {}).get('prompt', "")
+    if system_prompt:
+        combined.append({
+            "role": "system",
+            "content": system_prompt
+        })
+    
+    # Add brief channel context (last 2 messages excluding current user)
+    channel_context = [msg for msg in history['channel'][-3:] 
+                      if msg.get('user_id') != user_id][-2:]
+    if channel_context:
+        combined.append({
+            "role": "system",
+            "content": "Recent channel context: " + 
+                      " ".join([f"{msg.get('user_name', 'Someone')}: {msg['content']}" 
+                              for msg in channel_context])
+        })
+    
+    # Add user's specific history (last 10 messages)
+    user_history = history['users'][user_id][-10:]
+    combined.extend(user_history)
+    
+    return combined
 
 
 # set what the bot is allowed to listen to
@@ -105,30 +154,24 @@ start_time = time.time()
 
 
 # Function to send a request to the Ollama API and get a response
-def generate_response(prompt, channel_id):
-    # Get or create conversation history for this channel
-    if channel_id not in conversation_histories:
-        conversation_histories[channel_id] = load_conversation_history(channel_id)
-    conversation_history = conversation_histories[channel_id]
+def generate_response(prompt, channel_id, user_id, user_name):
+    # Get combined history (system prompt + channel context + user history)
+    conversation_history = get_combined_history(channel_id, user_id)
     
-    # Prepend the system prompt if available
-    system_prompt = config_data.get('system', {}).get('prompt', "")
-    # Add system prompt as the first message if not already present
-    if not conversation_history or conversation_history[0].get("role") != "system":
-        conversation_history.insert(0, {"role": "system", "content": system_prompt})
-    # Add message to history with minimal formatting
-    conversation_history.append({
+    # Add the current message to user's history
+    channel_data = get_or_create_history(channel_id, user_id)
+    user_history = channel_data['users'][user_id]
+    user_history.append({
         "role": "user",
         "content": prompt,
-        "name": "user"  # This helps maintain context without explicit "user says" prefixes
+        "name": user_name
     })
     
-    # Keep conversation history at a reasonable size (last 20 messages)
-    if len(conversation_history) > 21:  # 20 messages + 1 system message
-        conversation_history = [conversation_history[0]] + conversation_history[-20:]
-    
-    # Save the updated conversation history to the file
-    save_conversation_history(channel_id, conversation_history)
+    # Keep user's conversation history at a reasonable size (last 20 messages)
+    if len(user_history) > 20:
+        user_history = user_history[-20:]
+    channel_data['users'][user_id] = user_history
+    save_conversation_history(channel_id, user_history, user_id)
 
     # If OpenRouter is enabled and configured, use it instead of the local Ollama API
     openrouter_cfg = config_data.get('openrouter', {})
@@ -365,17 +408,20 @@ async def on_message(message):
             prompt = prompt.replace(f"<@{client.user.id}>", "").strip()
         
         # Get conversation context
-        context_id = str(message.channel.id)
-        if context_id not in conversation_histories:
-            conversation_histories[context_id] = []
-            # Add context about the conversation environment
-            system_context = {
-                "role": "system",
-                "content": f"""This is a conversation in a Discord {message.channel.type} named '{message.channel.name}'.
-Remember who you're talking to and maintain context naturally without explicitly stating 'user says' or similar prefixes.
-Focus on the conversation flow and maintain a natural dialog."""
-            }
-            conversation_histories[context_id].append(system_context)
+        channel_id = str(message.channel.id)
+        user_id = str(message.author.id)
+        
+        # Update channel history
+        channel_history = get_or_create_history(channel_id, user_id)
+        channel_history['channel'].append({
+            'content': message.content,
+            'user_id': user_id,
+            'user_name': message.author.display_name,
+            'timestamp': time.time()
+        })
+        # Keep only last 50 messages in channel history
+        channel_history['channel'] = channel_history['channel'][-50:]
+        save_conversation_history(channel_id, channel_history['channel'])
         
         try:
             async with message.channel.typing():
@@ -387,7 +433,12 @@ Focus on the conversation flow and maintain a natural dialog."""
                     if prompt:
                         # Use thread ID if in a thread, otherwise use channel ID
                         context_id = str(message.channel.id)
-                        response = generate_response(prompt, context_id)
+                        response = generate_response(
+                            prompt=prompt,
+                            channel_id=context_id,
+                            user_id=str(message.author.id),
+                            user_name=message.author.display_name
+                        )
                         await message.reply(response)
         except discord.errors.Forbidden:
             print(f"Error: Bot does not have permission to type in {message.channel.name}")

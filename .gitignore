@@ -3,3 +3,4 @@ history.json
 bot.log
 history_backup.json
 .env
+histories/
