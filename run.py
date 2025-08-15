@@ -13,6 +13,8 @@ import random
 import re
 import socket
 import urllib.parse
+import asyncio
+import aiohttp
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -276,9 +278,37 @@ async def on_message(message):
     # Don't let the bot reply to itself
     if message.author == client.user:
         return
-    # Returns if the user is a bot
-    if message.author.bot:
+        
+    # Chaos mode handling
+    chaos_config = config_data.get('chaos', {})
+    chaos_enabled = str(chaos_config.get('enabled', 'false')).lower() == 'true'
+    other_bot_id = chaos_config.get('bot_id', '')
+    
+    # If message is from a bot and it's not chaos mode, ignore it
+    if message.author.bot and not (chaos_enabled and str(message.author.id) == other_bot_id):
         return
+        
+    # Chaos mode: Handle bot-to-bot interaction
+    if chaos_enabled and message.author.bot and str(message.author.id) == other_bot_id:
+        # Get conversation tracking for this channel
+        channel_key = f"chaos_{message.channel.id}"
+        if channel_key not in conversation_histories:
+            conversation_histories[channel_key] = {'volleys': 0}
+            
+        # Check if we've reached max volleys
+        if conversation_histories[channel_key]['volleys'] >= chaos_config.get('max_volleys', 5):
+            print(f"Chaos mode: Reached max volleys in channel {message.channel.id}")
+            conversation_histories[channel_key]['volleys'] = 0  # Reset for next time
+            return
+            
+        # Random chance to reply
+        if random.random() > chaos_config.get('chance', 0.3):
+            print(f"Chaos mode: Random chance prevented reply in channel {message.channel.id}")
+            conversation_histories[channel_key]['volleys'] = 0  # Reset for next time
+            return
+            
+        # Increment volley counter
+        conversation_histories[channel_key]['volleys'] += 1
     # Command handling
     if message.content.strip().lower() == '!test-dns':
         try:
@@ -364,5 +394,51 @@ Focus on the conversation flow and maintain a natural dialog."""
             return
 
 
-# Run the bot
-client.run(TOKEN)
+# Add reconnection handling
+async def start_bot():
+    retry_count = 0
+    max_retries = 5
+    retry_delay = 5  # starting delay in seconds
+    
+    while True:
+        try:
+            print("Attempting to connect to Discord...")
+            await client.start(TOKEN)
+        except (discord.ConnectionClosed, aiohttp.ClientConnectionError) as e:
+            if retry_count >= max_retries:
+                print(f"Failed to connect after {max_retries} attempts. Exiting.")
+                break
+            
+            retry_count += 1
+            wait_time = retry_delay * (2 ** (retry_count - 1))  # exponential backoff
+            print(f"Connection error: {e}. Retrying in {wait_time} seconds... (Attempt {retry_count}/{max_retries})")
+            await asyncio.sleep(wait_time)
+        except KeyboardInterrupt:
+            print("Received keyboard interrupt. Shutting down gracefully...")
+            await client.close()
+            break
+        except Exception as e:
+            print(f"Unexpected error: {type(e).__name__}: {e}")
+            if retry_count >= max_retries:
+                print(f"Failed after {max_retries} attempts. Exiting.")
+                break
+            
+            retry_count += 1
+            wait_time = retry_delay * (2 ** (retry_count - 1))
+            print(f"Retrying in {wait_time} seconds... (Attempt {retry_count}/{max_retries})")
+            await asyncio.sleep(wait_time)
+        finally:
+            if client.is_closed():
+                await asyncio.sleep(5)  # Wait a bit before potentially reconnecting
+
+# Run the bot with proper error handling
+try:
+    asyncio.run(start_bot())
+except KeyboardInterrupt:
+    print("Bot stopped by user.")
+except Exception as e:
+    print(f"Fatal error: {type(e).__name__}: {e}")
+finally:
+    # Ensure we close the bot client
+    if not client.is_closed():
+        asyncio.run(client.close())

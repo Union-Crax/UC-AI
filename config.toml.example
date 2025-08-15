@@ -21,3 +21,10 @@ url = "https://api.openrouter.ai/v1/chat/completions"
 # IMPORTANT: Put your OpenRouter API key in a .env file:
 # Create a file named .env with the content:
 # OPENROUTER_KEY=your-key-here
+
+[chaos]
+# Settings for bot-to-bot interactions
+enabled = false      # Set to true to enable chaos mode where bots can talk to each other
+bot_id = ""         # The Discord ID of the other bot to talk with
+chance = 0.3        # Chance (0.0-1.0) that the bot will reply to another bot
+max_volleys = 5     # Maximum number of back-and-forth messages before stopping
