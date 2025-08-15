@@ -9,8 +9,15 @@ import os # Don't panic!!! This is used to save the history file to the computer
 import subprocess
 import sys
 import time
+import random
+import re
+import socket
+import urllib.parse
+from dotenv import load_dotenv
+from openai import OpenAI
 
-
+# Load environment variables from .env file
+load_dotenv()
 
 # LOAD VARIABLES FROM config.toml
 with open("config.toml", 'rb') as f:
@@ -49,6 +56,11 @@ TOKEN = config_data['discord']['token']  # Load token from config file
 SERVER_ID = int(config_data['discord'].get('server_id', 0))
 CHANNEL_ID = int(config_data['discord'].get('channel_id', 0))
 API_URL = 'http://localhost:11434/api/chat'
+
+# Small GIF chance configuration
+GIF_URL = 'https://tenor.com/h4GJRQYBqhK.gif'
+# Chance to send the GIF per eligible message (e.g. 0.01 = 1%)
+GIF_PROB = 0.01
 
 # Define the path for the conversation history file
 HISTORY_FILE_PATH = "history.json"
@@ -99,37 +111,94 @@ def generate_response(prompt):
     # Save the updated conversation history to the file
     save_conversation_history()
 
-    data = {
-        "model": config_data['ollama']['model'],
-        "messages": conversation_history,
-        "stream": False
-    }
+    # If OpenRouter is enabled and configured, use it instead of the local Ollama API
+    openrouter_cfg = config_data.get('openrouter', {})
+    # Prefer environment variable for the API key (safer than storing in config)
+    openrouter_key = os.getenv('OPENROUTER_KEY') or openrouter_cfg.get('key')
+    openrouter_enabled = str(openrouter_cfg.get('enabled', False)).lower() == 'true' and openrouter_key
+    # Use the official domain but allow overriding via env/config if needed
+    openrouter_url = os.getenv('OPENROUTER_URL') or openrouter_cfg.get('url') or 'https://api.openrouter.ai/v1/chat/completions'
+    
+    print(f"OpenRouter status - enabled: {openrouter_enabled}, key present: {bool(openrouter_key)}, url: {openrouter_url}")
 
-    response = requests.post(API_URL, json=data)
-    print("Raw Response Content:", response.text)
+    # If OpenRouter is enabled, use it exclusively (no fallback)
+    if openrouter_enabled:
+        try:
+            assistant_message = openrouter_request(openrouter_key, openrouter_cfg.get('model'), conversation_history)
+            if not assistant_message:
+                return "Error: OpenRouter request failed to return a response"
+        except Exception as e:
+            return f"Error: OpenRouter request failed - {str(e)}"
+    else:
+        # Use Ollama only if OpenRouter is not enabled
+        data = {
+            "model": config_data['ollama']['model'],
+            "messages": conversation_history,
+            "stream": False
+        }
 
+        response = requests.post(API_URL, json=data)
+        print("Raw Response Content:", response.text)
+
+        try:
+            response_data = response.json()
+            assistant_message = response_data.get('message', {}).get('content', "Sorry, I couldn't generate a response.")
+        except requests.exceptions.JSONDecodeError:
+            return "Error: Invalid API response"
+
+    # Remove any mention of being an AI or assistant
+    forbidden_phrases = [
+        "as an ai", "as an assistant", "i am an ai", "i am an assistant", "i'm an ai", "i'm an assistant",
+        "as a language model", "as a chatbot", "as an artificial intelligence", "as artificial intelligence"
+    ]
+    for phrase in forbidden_phrases:
+        assistant_message = assistant_message.replace(phrase, "")
+        assistant_message = assistant_message.replace(phrase.capitalize(), "")
+    # Add the assistant's reply to the conversation history
+    conversation_history.append({
+        "role": "assistant",
+        "content": assistant_message
+    })
+    # Discord message limit is 2000 characters
+    if len(assistant_message) > 2000:
+        assistant_message = assistant_message[:2000]
+    return assistant_message
+
+
+def openrouter_request(api_key, model, messages, url=None):
+    """Send a request to OpenRouter using the OpenAI SDK.
+    Returns the assistant's response content.
+    """
+    print(f"Attempting OpenRouter request with model: {model}")
+    
     try:
-        response_data = response.json()
-        assistant_message = response_data.get('message', {}).get('content', "Sorry, I couldn't generate a response.")
-        # Remove any mention of being an AI or assistant
-        forbidden_phrases = [
-            "as an ai", "as an assistant", "i am an ai", "i am an assistant", "i'm an ai", "i'm an assistant",
-            "as a language model", "as a chatbot", "as an artificial intelligence", "as artificial intelligence"
-        ]
-        for phrase in forbidden_phrases:
-            assistant_message = assistant_message.replace(phrase, "")
-            assistant_message = assistant_message.replace(phrase.capitalize(), "")
-        # Add the assistant's reply to the conversation history
-        conversation_history.append({
-            "role": "assistant",
-            "content": assistant_message
-        })
-        # Discord message limit is 2000 characters
-        if len(assistant_message) > 2000:
-            assistant_message = assistant_message[:2000]
-        return assistant_message
-    except requests.exceptions.JSONDecodeError:
-        return "Error: Invalid API response"
+        # Initialize OpenAI client with OpenRouter base URL
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key
+        )
+
+        # Make the request using the OpenAI SDK
+        completion = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=500,  # Limit response length to save credits
+            temperature=0.7,  # Add some randomness
+            extra_headers={
+                "HTTP-Referer": "https://github.com/Union-Crax/UC-AI",  # Repository URL for rankings
+                "X-Title": "UC-AI Discord Bot"  # App name for rankings
+            }
+        )
+
+        # Extract and return the response content
+        if completion.choices and len(completion.choices) > 0:
+            return completion.choices[0].message.content
+
+    except Exception as e:
+        print(f"OpenRouter request failed: {type(e).__name__}: {e}")
+        raise  # Re-raise the exception since we don't want fallbacks
+
+    return None
 
 
 # When the bot is ready
@@ -137,9 +206,12 @@ def generate_response(prompt):
 @client.event
 async def on_ready():
     uptime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))
-    model = config_data['ollama']['model']
+    openrouter_enabled = str(config_data.get('openrouter', {}).get('enabled', False)).lower() == 'true'
+    model = config_data.get('openrouter', {}).get('model') if openrouter_enabled else config_data['ollama']['model']
+    backend = 'OpenRouter' if openrouter_enabled else 'Ollama'
     mention_mode = 'FreeWill' if str(config_data['discord'].get('FreeWill', 'false')).lower() == 'true' else 'Mention Only'
     print(f'Logged in as {client.user}')
+    print(f'Backend: {backend}')
     print(f'Model: {model}')
     print(f'Started at: {uptime}')
     print(f'Mode: {mention_mode}')
@@ -154,6 +226,7 @@ async def on_ready():
             if channel:
                 info_message = (
                     f"**chatbot started!**\n"
+                    f"Backend: `{backend}`\n"
                     f"Model: `{model}`\n"
                     f"Started at: `{uptime}`\n"
                     f"Mode: `{mention_mode}`\n"
@@ -181,6 +254,22 @@ async def on_message(message):
     if message.author.bot:
         return
     # Command handling
+    if message.content.strip().lower() == '!test-dns':
+        try:
+            import socket
+            test_hosts = ['api.openrouter.ai', '8.8.8.8', 'google.com']
+            results = []
+            for host in test_hosts:
+                try:
+                    ip = socket.gethostbyname(host)
+                    results.append(f"✅ {host} -> {ip}")
+                except Exception as e:
+                    results.append(f"❌ {host} -> {str(e)}")
+            await message.reply("DNS Test Results:\n" + "\n".join(results))
+        except Exception as e:
+            await message.reply(f"Error running DNS test: {e}")
+        return
+
     if message.content.strip().lower() == '!restart':
         if message.author.guild_permissions.administrator:
             await message.reply('Restarting bot...')
@@ -199,6 +288,15 @@ async def on_message(message):
             await message.reply('You do not have permission to stop the bot.')
         return
 
+    # If someone says the keyword 'feet', send the GIF immediately (case-insensitive)
+    try:
+        if re.search(r"\bfeet\b", message.content, re.I):
+            await message.reply(GIF_URL)
+            return
+    except Exception:
+        # If anything goes wrong (permissions, etc.), just continue to normal handling
+        pass
+
     # Respond to every message if NoMention is true, otherwise only if mentioned
     free_will = str(config_data['discord'].get('FreeWill', 'false')).lower() == 'true'
     should_respond = free_will or client.user.mentioned_in(message)
@@ -209,9 +307,14 @@ async def on_message(message):
         prompt = f"{message.author.display_name} says: " + prompt
         try:
             async with message.channel.typing():
-                if prompt:
-                    response = generate_response(prompt)
-                    await message.reply(response)
+                # Small random chance to send the GIF URL directly
+                if random.random() < GIF_PROB:
+                    # Send only the GIF URL as requested
+                    await message.reply(GIF_URL)
+                else:
+                    if prompt:
+                        response = generate_response(prompt)
+                        await message.reply(response)
         except discord.errors.Forbidden:
             print(f"Error: Bot does not have permission to type in {message.channel.name}")
             return

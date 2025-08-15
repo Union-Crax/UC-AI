@@ -9,3 +9,15 @@ model = "llama3.2" # Some examples of valid input are "llama3.2" and "llama2-unc
 
 [system]
 prompt = ""
+
+[openrouter]
+# Set enabled = true to use OpenRouter (remote) instead of the local Ollama model
+enabled = false
+# The OpenRouter model to use (e.g. "gpt-4o-mini", "anthropic/claude-2")
+model = "gpt-4o-mini"
+# Optional: override the OpenRouter endpoint URL if needed
+url = "https://api.openrouter.ai/v1/chat/completions"
+
+# IMPORTANT: Put your OpenRouter API key in a .env file:
+# Create a file named .env with the content:
+# OPENROUTER_KEY=your-key-here
