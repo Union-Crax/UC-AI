@@ -114,11 +114,17 @@ def generate_response(prompt, channel_id):
     # Add system prompt as the first message if not already present
     if not conversation_history or conversation_history[0].get("role") != "system":
         conversation_history.insert(0, {"role": "system", "content": system_prompt})
-    # add user message to history
+    # Add message to history with minimal formatting
     conversation_history.append({
         "role": "user",
-        "content": prompt
+        "content": prompt,
+        "name": "user"  # This helps maintain context without explicit "user says" prefixes
     })
+    
+    # Keep conversation history at a reasonable size (last 20 messages)
+    if len(conversation_history) > 21:  # 20 messages + 1 system message
+        conversation_history = [conversation_history[0]] + conversation_history[-20:]
+    
     # Save the updated conversation history to the file
     save_conversation_history(channel_id, conversation_history)
 
@@ -321,10 +327,26 @@ async def on_message(message):
     free_will = str(config_data['discord'].get('FreeWill', 'false')).lower() == 'true'
     should_respond = free_will or client.user.mentioned_in(message)
     if should_respond:
+        # Clean the message content
         prompt = message.content
         if not free_will:
+            # Remove bot mention from the message
             prompt = prompt.replace(f"<@!{client.user.id}>", "").strip()
-        prompt = f"{message.author.display_name} says: " + prompt
+            prompt = prompt.replace(f"<@{client.user.id}>", "").strip()
+        
+        # Get conversation context
+        context_id = str(message.channel.id)
+        if context_id not in conversation_histories:
+            conversation_histories[context_id] = []
+            # Add context about the conversation environment
+            system_context = {
+                "role": "system",
+                "content": f"""This is a conversation in a Discord {message.channel.type} named '{message.channel.name}'.
+Remember who you're talking to and maintain context naturally without explicitly stating 'user says' or similar prefixes.
+Focus on the conversation flow and maintain a natural dialog."""
+            }
+            conversation_histories[context_id].append(system_context)
+        
         try:
             async with message.channel.typing():
                 # Small random chance to send the GIF URL directly
