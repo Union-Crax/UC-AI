@@ -62,13 +62,18 @@ GIF_URL = 'https://tenor.com/h4GJRQYBqhK.gif'
 # Chance to send the GIF per eligible message (e.g. 0.01 = 1%)
 GIF_PROB = 0.01
 
-# Define the path for the conversation history file
-HISTORY_FILE_PATH = "history.json"
+# Define the path for the conversation history files
+def get_history_path(channel_id):
+    # Create a histories directory if it doesn't exist
+    if not os.path.exists("histories"):
+        os.makedirs("histories")
+    return f"histories/history_{channel_id}.json"
 
 # Load conversation history from a file if it exists
-def load_conversation_history():
-    if os.path.exists(HISTORY_FILE_PATH):
-        with open(HISTORY_FILE_PATH, 'r') as file:
+def load_conversation_history(channel_id):
+    history_path = get_history_path(channel_id)
+    if os.path.exists(history_path):
+        with open(history_path, 'r') as file:
             try:
                 content = file.read().strip()
                 if not content:
@@ -79,12 +84,13 @@ def load_conversation_history():
     return []
 
 # Save conversation history to a file
-def save_conversation_history():
-    with open(HISTORY_FILE_PATH, 'w') as file:
-        json.dump(conversation_history, file)
+def save_conversation_history(channel_id, history):
+    history_path = get_history_path(channel_id)
+    with open(history_path, 'w') as file:
+        json.dump(history, file)
 
-# Store conversation history in a list
-conversation_history = load_conversation_history()
+# Store conversation histories in a dictionary
+conversation_histories = {}
 
 
 # set what the bot is allowed to listen to
@@ -97,7 +103,12 @@ start_time = time.time()
 
 
 # Function to send a request to the Ollama API and get a response
-def generate_response(prompt):
+def generate_response(prompt, channel_id):
+    # Get or create conversation history for this channel
+    if channel_id not in conversation_histories:
+        conversation_histories[channel_id] = load_conversation_history(channel_id)
+    conversation_history = conversation_histories[channel_id]
+    
     # Prepend the system prompt if available
     system_prompt = config_data.get('system', {}).get('prompt', "")
     # Add system prompt as the first message if not already present
@@ -109,7 +120,7 @@ def generate_response(prompt):
         "content": prompt
     })
     # Save the updated conversation history to the file
-    save_conversation_history()
+    save_conversation_history(channel_id, conversation_history)
 
     # If OpenRouter is enabled and configured, use it instead of the local Ollama API
     openrouter_cfg = config_data.get('openrouter', {})
@@ -159,6 +170,9 @@ def generate_response(prompt):
         "role": "assistant",
         "content": assistant_message
     })
+    # Save the updated history
+    save_conversation_history(channel_id, conversation_history)
+    
     # Discord message limit is 2000 characters
     if len(assistant_message) > 2000:
         assistant_message = assistant_message[:2000]
@@ -244,8 +258,14 @@ async def on_ready():
 # When the bot detects a new message
 @client.event
 async def on_message(message):
-    # Only allow messages from the specified server and channel
-    if message.guild is None or message.guild.id != SERVER_ID or message.channel.id != CHANNEL_ID:
+    # Only allow messages from the specified server
+    if message.guild is None or message.guild.id != SERVER_ID:
+        return
+    
+    # For main channel messages, check channel ID
+    # For thread messages, check parent channel ID
+    parent_channel_id = message.channel.parent_id if isinstance(message.channel, discord.Thread) else message.channel.id
+    if parent_channel_id != CHANNEL_ID:
         return
     # Don't let the bot reply to itself
     if message.author == client.user:
@@ -313,7 +333,9 @@ async def on_message(message):
                     await message.reply(GIF_URL)
                 else:
                     if prompt:
-                        response = generate_response(prompt)
+                        # Use thread ID if in a thread, otherwise use channel ID
+                        context_id = str(message.channel.id)
+                        response = generate_response(prompt, context_id)
                         await message.reply(response)
         except discord.errors.Forbidden:
             print(f"Error: Bot does not have permission to type in {message.channel.name}")
